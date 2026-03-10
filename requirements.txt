@@ -1,1 +1,35 @@
+# ============================================================
+# requirements.txt
+# ALKF Master Land Plan API  v1.0
+# ============================================================
 
+# API framework
+fastapi==0.111.0
+uvicorn[standard]==0.30.1
+
+# Geospatial core
+geopandas==0.14.4
+shapely==2.0.4
+pyproj==3.6.1
+fiona==1.9.6
+
+# OSM data
+osmnx==1.9.3
+
+# Numerical
+numpy==1.26.4
+scipy==1.13.1
+
+# HTTP (resolver API calls)
+requests==2.32.3
+
+# DXF export
+ezdxf==1.3.4
+
+# Lease plan parsing
+opencv-python-headless==4.10.0.84
+pdf2image==1.17.0
+
+# Noise pipeline internals (reused from view.py / noise.py)
+pandas==2.2.2
+networkx==3.3

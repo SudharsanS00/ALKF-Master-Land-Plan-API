@@ -56,7 +56,7 @@ DATA_DIR = os.path.join(BASE_DIR, "data")
 
 log.info("Loading building height dataset...")
 BUILDING_DATA = gpd.read_file(
-    os.path.join(DATA_DIR, "BUILDINGS_FINAL.gpkg")
+    os.path.join(DATA_DIR, "BUILDINGS_FINAL .gpkg")
 ).to_crs(3857)
 if "HEIGHT_M" not in BUILDING_DATA.columns:
     raise RuntimeError(

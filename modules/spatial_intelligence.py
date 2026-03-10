@@ -1098,18 +1098,19 @@ def generate_site_intelligence(
     n_pts = len(xs)
 
     # ── 4. Fetch OSM features for view classification ─────────
-    log.info(f"  Fetching OSM view features (radius={VIEW_FETCH_RADIUS}m)...")
-    features = _fetch_view_features(lon, lat, VIEW_FETCH_RADIUS)
+    log.info(f"  Fetching OSM view features (radius={_VIEW_FETCH_RADIUS}m)...")
+    features = _fetch_view_features(lon, lat, _VIEW_FETCH_RADIUS)
 
     # ── 5. View classification ────────────────────────────────
     log.info(f"  Classifying view at {n_pts} boundary points...")
     t_view = time.time()
-    view_types = _batch_classify_views(xs, ys, features, building_data, radius_m=200)
+    view_types = _batch_classify_views(xs, ys, features, building_data, radius_m=_VIEW_RADIUS_M)
     log.info(f"  View done in {time.time() - t_view:.1f}s")
 
     # ── 6. Noise sampling ─────────────────────────────────────
     log.info("  Building noise grid...")
     t_noise = time.time()
+    from modules.noise import CFG as NOISE_CFG  # lazy — avoids matplotlib at module load
     noise_cfg = NOISE_CFG.copy()
     X, Y, noise_grid = _build_noise_grid(lon, lat, site_polygon, noise_cfg)
 

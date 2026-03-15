@@ -504,20 +504,42 @@ def _fallback_noise_from_roads(
 # ============================================================
 
 def generate_site_intelligence(
-    data_type:         str,
-    value:             str,
-    building_data:     gpd.GeoDataFrame,
-    lon:               Optional[float] = None,
-    lat:               Optional[float] = None,
-    lot_ids:           Optional[list]  = None,
-    extents:           Optional[list]  = None,
-    db_threshold:      float           = 65.0,
-    non_building_json: Optional[dict]  = None,
-    lease_plan_b64:    Optional[str]   = None,
+    data_type:            str,
+    value:                str,
+    building_data:        gpd.GeoDataFrame,
+    lon:                  Optional[float] = None,
+    lat:                  Optional[float] = None,
+    lot_ids:              Optional[list]  = None,
+    extents:              Optional[list]  = None,
+    db_threshold:         float           = 65.0,
+    non_building_json:    Optional[dict]  = None,
+    lease_plan_b64:       Optional[str]   = None,
+    detect_entry_points:  bool            = False,
 ) -> dict:
     """
     Full boundary intelligence pipeline.
     Returns a structured JSON-serialisable site intelligence dataset.
+
+    Steps:
+      1.  Resolve identifier -> WGS84 lon/lat
+      2.  Fetch lot boundary polygon (EPSG:3857)
+      3.  Densify boundary at 1m intervals
+      4.  Fetch OSM features (buildings, parks, water) concurrently
+      5.  Classify view type at every boundary point
+      6.  Build noise propagation grid (noise.py pipeline)
+      7.  Sample noise at every boundary point
+      8.  Evaluate is_noisy threshold
+      9.  Assemble core output dict
+      10. (Optional) Extract non-building zones from lease plan image
+      11. (Optional) Detect vehicle entry points (X/Y/Z) from lease plan image
+
+    Parameters
+    ----------
+    detect_entry_points : bool
+        If True and lease_plan_b64 is provided, runs entry_point_detector
+        to locate vehicle access gaps in the green verge strip and assigns
+        X, Y, Z (and further) labels in contour-walk order.
+        Output is stored under output["entry_points"].
     """
     t0 = time.time()
     log.info(f"[spatial_intelligence] START  {data_type} {value}")
@@ -634,6 +656,32 @@ def generate_site_intelligence(
             output["non_building_areas"] = {}
     else:
         log.info("  Lease plan inputs not provided — skipping")
+
+    # ── 11. Optional vehicle entry point detection ────────────
+    if detect_entry_points and lease_plan_b64:
+        log.info("  Entry point detection requested...")
+        try:
+            from modules.entry_point_detector import extract_entry_points
+            # Reuse already-decoded bytes from step 10 if available
+            ep_bytes = image_bytes if "image_bytes" in locals() else base64.b64decode(lease_plan_b64)
+            entry_data = extract_entry_points(
+                image_bytes    = ep_bytes,
+                site_polygon   = site_polygon,
+                crs            = "EPSG:3857",
+                points_per_gap = 3,
+            )
+            output["entry_points"] = entry_data
+            log.info(
+                f"  Entry points: {len(entry_data.get('entry_points', []))} detected "
+                f"across {entry_data.get('gap_count', 0)} gaps"
+            )
+        except Exception as e:
+            log.warning(f"  Entry point detection failed: {e}")
+            output["entry_points"] = {"crs": "EPSG:3857", "entry_points": [], "gap_count": 0, "gaps": []}
+    elif detect_entry_points and not lease_plan_b64:
+        log.warning("  detect_entry_points=True but no lease_plan_b64 supplied -- skipping")
+    else:
+        log.info("  Entry point detection not requested -- skipping")
 
     log.info(
         f"[spatial_intelligence] DONE  pts={n_pts}  "

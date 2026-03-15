@@ -3,6 +3,13 @@
 # ALKF Master Land Plan API  v1.2  (Flask)
 # ============================================================
 
+# ── Gevent monkey-patch — MUST be first ──────────────────────
+# Patches stdlib sockets/threads so gunicorn gevent worker can
+# yield during long I/O (OSMnx fetches, WFS calls, noise grid).
+# Without this the sync worker blocks and Render kills the request.
+from gevent import monkey
+monkey.patch_all()
+
 from flask import Flask, request, jsonify, Response
 from flask_cors import CORS
 from io import BytesIO

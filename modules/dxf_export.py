@@ -1,8 +1,12 @@
 # ============================================================
 # modules/dxf_export.py
-# DXF CAD Export Engine  v1.1
+# DXF CAD Export Engine  v1.2
 # ALKF Master Land Plan API
 #
+# v1.2 fixes:
+#   - Replaced tempfile round-trip with StringIO.write() — eliminates
+#     NameError on 'raw' if the read-back failed, removes all disk I/O
+#   - Removed unused os and tempfile imports
 # v1.1 fixes:
 #   - ASCII-safe strings (_ascii() sanitiser — no Unicode corruption)
 #   - Label offsets scaled from site bounding box (not hardcoded 0.6m)
@@ -15,8 +19,6 @@
 from __future__ import annotations
 
 import logging
-import os
-import tempfile
 from io import BytesIO
 
 import ezdxf
@@ -197,22 +199,13 @@ def export_dxf(intelligence_data: dict) -> BytesIO:
 
     _write_title_block(msp, site_id, intelligence_data, xs, ys, n)
 
-    # Write to temp file (text mode) then read back as binary bytes
-    tmp_path = None
-    try:
-        with tempfile.NamedTemporaryFile(suffix=".dxf", delete=False, mode="w", encoding="utf-8") as tmp:
-            tmp_path = tmp.name
-            doc.write(tmp)
-        with open(tmp_path, "rb") as f:
-            raw = f.read()
-        buf = BytesIO(raw)
-        buf.seek(0)
-    finally:
-        if tmp_path and os.path.exists(tmp_path):
-            try:
-                os.unlink(tmp_path)
-            except OSError:
-                pass
+    # Write to an in-memory text stream then encode to bytes — no temp files needed.
+    import io as _io
+    txt_buf = _io.StringIO()
+    doc.write(txt_buf)
+    raw = txt_buf.getvalue().encode("utf-8")
+    buf = BytesIO(raw)
+    buf.seek(0)
 
     log.info(f"[dxf_export] DONE  pts={n}  size={len(raw):,} bytes  text_h={text_h}  offset={offset}")
     return buf

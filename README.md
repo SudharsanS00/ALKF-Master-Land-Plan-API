@@ -8,7 +8,100 @@ Part of the **ALKF+ Automated Spatial Intelligence Platform**.
 
 ## Architecture Diagram
 
-![ALKF Master Land Plan API Architecture](./architecture.svg)
+┌─────────────────────────────────────────────────────────────────────┐
+│                    ALKF Master Land Plan API                        │
+│                   Flask · Gunicorn (gthread)                        │
+└─────────────────────────────────────────────────────────────────────┘
+                               │
+                        Client (HTTP)
+                               │
+              ┌────────────────┼────────────────┐
+              ▼                ▼                ▼
+        ┌──────────┐  ┌─────────────────┐  ┌────────────────────┐
+        │  GET /   │  │POST             │  │POST                │
+        │  health  │  │/site-           │  │/site-intelligence  │
+        │  check   │  │intelligence     │  │-dxf                │
+        └──────────┘  │→ jsonify()      │  │→ Response(.dxf)    │
+                      └────────┬────────┘  └─────────┬──────────┘
+                               │                      │
+                      ┌────────┴──────────────────────┘
+                      │  _parse_body() · _normalise_request()
+                      │  MD5 cache (skipped if lease plan / entry pts)
+                      ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│          generate_site_intelligence()  —  spatial_intelligence.py   │
+├──────────────────────┬──────────────────────┬───────────────────────┤
+│  Step 1 — Resolve    │  Step 2 — Boundary   │  Step 3 — Densify     │
+│  resolver.py         │  LandsD iC1000 API   │  Shapely interpolate  │
+│  → WGS84 coords      │  GML → EPSG:3857     │  every 1m → (xs, ys)  │
+└──────────────────────┴──────────┬───────────┴───────────────────────┘
+                                  ▼
+               ┌──────────────────────────────────────┐
+               │  Step 4 — OSM Features (concurrent)  │
+               │  ThreadPoolExecutor(max_workers=3)   │
+               │  buildings · parks · water — 300m r  │
+               └──────────────────┬───────────────────┘
+                                  ▼
+               ┌──────────────────────────────────────┐
+               │  Step 5 — View Classification        │
+               │  view.py _classify_sectors()         │
+               │  20° wedges → SEA/GREEN/CITY/…       │
+               │  ≤500 pts: direct · >500: 10m grid   │
+               └──────────────────┬───────────────────┘
+                                  ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│  Step 6 — Noise Pipeline                                            │
+│  noise.py: ATCWFSLoader → TrafficAssigner → LNRSAssigner            │
+│  → CanyonAssigner → EmissionEngine → PropagationEngine              │
+│  → 5m grid + Gaussian σ=1.5 → NN sample per boundary point          │
+│  Fallback: L(r) = L_class − 20·log₁₀(r+1)  (vectorised NumPy)       │
+└─────────────────────────────────────┬───────────────────────────────┘
+                                      ▼
+               ┌──────────────────────────────────────┐
+               │  Step 7 — Threshold + Assemble       │
+               │  is_noisy = noise_db >= db_threshold │
+               │  → build output dict                 │
+               └──────────────────┬───────────────────┘
+                                  │
+               ┌──────────────────┼──────────────────┐
+               ▼                                     ▼
+   ┌───────────────────────┐           ┌─────────────────────────┐
+   │  Step 10 (optional)   │           │  Step 11 (optional)     │
+   │  lease_plan_parser    │           │  entry_point_detector   │
+   │  OpenCV HSV segment.  │           │  green gap detection    │
+   │  → non_building_areas │           │  → X / Y / Z labels     │
+   └───────────────────────┘           └─────────────────────────┘
+                                  │
+                    ┌─────────────┴──────────────┐
+                    ▼                            ▼
+          ┌──────────────────┐       ┌───────────────────────┐
+          │  _json_response  │       │  export_dxf()         │
+          │  _compact_json() │       │  ezdxf R2010          │
+          │  inline arrays   │       │  StringIO → BytesIO   │
+          │  float decimals  │       │  → Response(.dxf)     │
+          └──────────────────┘       └───────────────────────┘
+
+─────────────────── External Data Sources ───────────────────────────
+
+  HK GeoData API          LandsD iC1000 API        CSDI WFS (HK EPD)
+  location resolution     lot boundary GML          ATC + LNRS data
+
+  OpenStreetMap           BUILDINGS_FINAL.gpkg      Lease plan (opt.)
+  bldgs/parks/water/roads 42k HK building heights   PDF / PNG base64
+
+─────────────────── DXF Output Layers ──────────────────────────────
+
+  SITE_BOUNDARY   VIEW_POINTS   NOISE_POINTS   NON_BUILDING
+  ENTRY_POINTS    LABELS
+
+─────────────────── View Classification Labels ──────────────────────
+
+  SEA   HARBOR   RESERVOIR   GREEN   PARK   CITY   MOUNTAIN
+
+─────────────────────────────────────────────────────────────────────
+  Python 3.11 · Flask · Gunicorn gthread · Render Singapore
+  ezdxf R2010 · OpenCV · osmnx · Shapely · PyProj
+─────────────────────────────────────────────────────────────────────
 
 ---
 

@@ -5,7 +5,6 @@ setuptools
 flask
 flask-cors
 gunicorn
-gevent
 
 # Geospatial core
 geopandas

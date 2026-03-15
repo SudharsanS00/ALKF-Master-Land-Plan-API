@@ -68,15 +68,16 @@ log.info("Startup complete.")
 # ── Request / Response models ─────────────────────────────────
 
 class SiteIntelligenceRequest(BaseModel):
-    data_type:        str
-    value:            str
-    lon:              Optional[float]      = None
-    lat:              Optional[float]      = None
-    lot_ids:          Optional[List[str]]  = None
-    extents:          Optional[List[dict]] = None
-    db_threshold:     Optional[float]      = None   # defaults to 65.0
-    non_building_json: Optional[dict]      = None   # colour label + non_building_areas
-    lease_plan_b64:   Optional[str]        = None   # base64-encoded PDF/image
+    data_type:            str
+    value:                str
+    lon:                  Optional[float]      = None
+    lat:                  Optional[float]      = None
+    lot_ids:              Optional[List[str]]  = None
+    extents:              Optional[List[dict]] = None
+    db_threshold:         Optional[float]      = None   # defaults to 65.0
+    non_building_json:    Optional[dict]       = None   # colour label + non_building_areas
+    lease_plan_b64:       Optional[str]        = None   # base64-encoded PDF/image
+    detect_entry_points:  bool                 = False  # detect X/Y/Z vehicle access points
 
 
 # ── Helpers ───────────────────────────────────────────────────
@@ -111,22 +112,27 @@ def site_intelligence(req: SiteIntelligenceRequest):
     """
     Returns a structured JSON dataset describing the site boundary
     sampled at 1-metre intervals with:
-      - view_type  : per-point view classification label
-      - noise_db   : per-point noise level (dBA)
-      - is_noisy   : boolean array (noise_db >= db_threshold)
-      - non_building_areas (optional) : extracted from lease plan
+      - view_type           : per-point view classification label
+      - noise_db            : per-point noise level (dBA)
+      - is_noisy            : boolean array (noise_db >= db_threshold)
+      - non_building_areas  : (optional) colour-segmented zones from lease plan
+      - entry_points        : (optional) vehicle access points X/Y/Z from lease plan
     """
     try:
         dt, v, lon, lat, lot_ids, extents, threshold = normalise_request(req)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
-    log.info(f"[site-intelligence] {dt} {v}  threshold={threshold} dB")
+    log.info(
+        f"[site-intelligence] {dt} {v}  threshold={threshold} dB"
+        f"  entry_points={req.detect_entry_points}"
+    )
     start = time.time()
 
-    # Cache check — lease plan requests are not cached (file content varies)
+    # Cache: skip if lease plan or entry-point detection is requested
+    # (those depend on uploaded image content which can differ per call)
     cache_key = None
-    if req.lease_plan_b64 is None:
+    if req.lease_plan_b64 is None and not req.detect_entry_points:
         cache_key = make_cache_key(dt, v, threshold)
         if cache_key in CACHE_STORE:
             log.info(f"  Cache hit: {cache_key}")
@@ -134,16 +140,17 @@ def site_intelligence(req: SiteIntelligenceRequest):
 
     try:
         result = generate_site_intelligence(
-            data_type        = dt,
-            value            = v,
-            building_data    = BUILDING_DATA,
-            lon              = lon,
-            lat              = lat,
-            lot_ids          = lot_ids,
-            extents          = extents,
-            db_threshold     = threshold,
-            non_building_json= req.non_building_json,
-            lease_plan_b64   = req.lease_plan_b64,
+            data_type           = dt,
+            value               = v,
+            building_data       = BUILDING_DATA,
+            lon                 = lon,
+            lat                 = lat,
+            lot_ids             = lot_ids,
+            extents             = extents,
+            db_threshold        = threshold,
+            non_building_json   = req.non_building_json,
+            lease_plan_b64      = req.lease_plan_b64,
+            detect_entry_points = req.detect_entry_points,
         )
     except Exception as e:
         log.exception("site-intelligence failed")
@@ -165,30 +172,36 @@ def site_intelligence_dxf(req: SiteIntelligenceRequest):
 
     Layers in the DXF:
       SITE_BOUNDARY  — densified boundary polyline
-      VIEW_POINTS    — point entities with view label
-      NOISE_POINTS   — point entities with dBA value
+      VIEW_POINTS    — point entities coloured by view type
+      NOISE_POINTS   — point entities coloured red (noisy) / cyan (quiet)
       NON_BUILDING   — closed polygons for non-buildable areas (optional)
+      ENTRY_POINTS   — point entities for vehicle access points X/Y/Z (optional)
+      LABELS         — text annotations and title block
     """
     try:
         dt, v, lon, lat, lot_ids, extents, threshold = normalise_request(req)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
-    log.info(f"[site-intelligence-dxf] {dt} {v}  threshold={threshold} dB")
+    log.info(
+        f"[site-intelligence-dxf] {dt} {v}  threshold={threshold} dB"
+        f"  entry_points={req.detect_entry_points}"
+    )
     start = time.time()
 
     try:
         result = generate_site_intelligence(
-            data_type        = dt,
-            value            = v,
-            building_data    = BUILDING_DATA,
-            lon              = lon,
-            lat              = lat,
-            lot_ids          = lot_ids,
-            extents          = extents,
-            db_threshold     = threshold,
-            non_building_json= req.non_building_json,
-            lease_plan_b64   = req.lease_plan_b64,
+            data_type           = dt,
+            value               = v,
+            building_data       = BUILDING_DATA,
+            lon                 = lon,
+            lat                 = lat,
+            lot_ids             = lot_ids,
+            extents             = extents,
+            db_threshold        = threshold,
+            non_building_json   = req.non_building_json,
+            lease_plan_b64      = req.lease_plan_b64,
+            detect_entry_points = req.detect_entry_points,
         )
     except Exception as e:
         log.exception("site-intelligence-dxf failed at analysis stage")

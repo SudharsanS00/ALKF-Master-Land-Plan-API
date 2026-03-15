@@ -18,6 +18,7 @@
 
 from __future__ import annotations
 
+import io
 import logging
 from io import BytesIO
 
@@ -169,7 +170,7 @@ def _write_entry_points(msp, entry_points_data: dict, text_h: float, offset: flo
     log.info(f"  DXF: ENTRY_POINTS  {len(pts)} points")
 
 
-
+def _write_title_block(msp, site_id, intelligence, xs, ys, n):
     xmin, ymin, xmax, ymax = _bbox(xs, ys)
     width   = xmax - xmin
     height  = ymax - ymin
@@ -244,8 +245,7 @@ def export_dxf(intelligence_data: dict) -> BytesIO:
     _write_title_block(msp, site_id, intelligence_data, xs, ys, n)
 
     # Write to an in-memory text stream then encode to bytes — no temp files needed.
-    import io as _io
-    txt_buf = _io.StringIO()
+    txt_buf = io.StringIO()
     doc.write(txt_buf)
     raw = txt_buf.getvalue().encode("utf-8")
     buf = BytesIO(raw)

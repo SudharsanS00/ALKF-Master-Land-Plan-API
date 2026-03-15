@@ -4,7 +4,7 @@ services:
     env: python
     region: singapore
     buildCommand: pip install --upgrade pip setuptools wheel && pip install -r requirements.txt
-    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --workers 1 --timeout 120
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --worker-class gevent --workers 1 --worker-connections 10 --timeout 300 --keep-alive 5
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.4

@@ -1,6 +1,6 @@
 # ============================================================
 # app.py
-# ALKF Master Land Plan API  v1.2  (Flask)
+# ALKF Master Land Plan API  v1.2  (Flask API)
 # ============================================================
 
 from flask import Flask, request, jsonify, Response

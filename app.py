@@ -28,42 +28,65 @@ app = Flask(__name__)
 CORS(app, origins="*", supports_credentials=False)
 
 
-# ── JSON serialiser — preserves float formatting (65 → 65.0) ─
-class _FloatEncoder(json.JSONEncoder):
+# ── JSON serialiser ───────────────────────────────────────────
+# Produces output that matches the spec exactly:
+#   - dicts indented at 2 spaces
+#   - ALL arrays on a single line: [62.3, 68.7, 64.1]
+#   - floats always have a decimal point: 65.0, 1.0
+#   - booleans, ints, strings are standard JSON
+
+import re as _re
+
+def _compact_json(obj: dict) -> str:
     """
-    Standard json.JSONEncoder drops the decimal on whole-number floats
-    (65.0 → 65, 1.0 → 1).  This subclass forces at least one decimal
-    place so the output always matches the spec (65.0, 1.0).
+    Serialise a dict to JSON where arrays are inline and floats
+    always carry a decimal point. Round-trip safe.
     """
-    def iterencode(self, o, _one_shot=False):
-        # Replace every Python float that is a whole number with a
-        # string representation that includes ".0", then let the
-        # standard encoder handle everything else.
-        return super().iterencode(self._fix(o), _one_shot)
+    class _RawFloat:
+        def __init__(self, s): self.s = s
 
-    def _fix(self, obj):
-        if isinstance(obj, float):
-            # Format as "65.0", "1.0", "62.3" etc.
-            return _FloatMarker(obj)
-        if isinstance(obj, dict):
-            return {k: self._fix(v) for k, v in obj.items()}
-        if isinstance(obj, (list, tuple)):
-            return [self._fix(v) for v in obj]
-        return obj
+    def _fix(o):
+        if isinstance(o, bool):  return o          # bool before float check
+        if isinstance(o, float):
+            s = repr(o)                            # full precision, e.g. '834568.1'
+            return _RawFloat(s if '.' in s or 'e' in s else s + '.0')
+        if isinstance(o, int):   return o
+        if isinstance(o, str):   return o
+        if isinstance(o, dict):  return {k: _fix(v) for k, v in o.items()}
+        if isinstance(o, list):  return [_fix(v) for v in o]
+        return o
 
+    # Phase 1: mark floats with unique sentinel strings
+    _TMPL = '__RAWF_{}_RAWF__'
+    _map: dict = {}
+    _ctr = [0]
 
-class _FloatMarker(float):
-    """Thin float subclass so we can override __repr__ for the encoder."""
-    def __repr__(self):
-        # Always emit at least one decimal place
-        s = format(float(self), 'g')
-        return s if '.' in s or 'e' in s else s + '.0'
+    def _mark(x):
+        if isinstance(x, _RawFloat):
+            key = _TMPL.format(_ctr[0]); _map[key] = x.s; _ctr[0] += 1; return key
+        if isinstance(x, dict):  return {k: _mark(v) for k, v in x.items()}
+        if isinstance(x, list):  return [_mark(v) for v in x]
+        return x
+
+    raw = json.dumps(_mark(_fix(obj)), indent=2)
+
+    # Phase 2: unquote sentinels → bare float literals
+    for k, v in _map.items():
+        raw = raw.replace(f'"{k}"', v)
+
+    # Phase 3: collapse every JSON array to one line
+    _arr = _re.compile(r'\[(?:[^\[\]{}])*\]', _re.DOTALL)
+    prev = None
+    while prev != raw:
+        prev = raw
+        raw = _arr.sub(lambda m: _re.sub(r'\s+', ' ', m.group(0)).strip(), raw)
+
+    return raw
 
 
 def _json_response(data, status=200):
-    """Drop-in replacement for jsonify() that preserves float decimals."""
-    body = json.dumps(data, cls=_FloatEncoder, ensure_ascii=False)
-    return Response(body, status=status, mimetype="application/json")
+    """Return a Flask Response with compact inline-array JSON."""
+    return Response(_compact_json(data), status=status, mimetype="application/json")
 
 # ── Cache ─────────────────────────────────────────────────────
 CACHE_STORE: dict = {}

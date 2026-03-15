@@ -11,8 +11,9 @@
 setuptools
 
 # API framework
-fastapi
-uvicorn[standard]
+flask
+flask-cors
+gunicorn
 
 # Geospatial core
 geopandas

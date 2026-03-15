@@ -130,17 +130,17 @@ Client Request
 │  generate_site_intelligence()  —  modules/spatial_intelligence.py  │
 │                                                                    │
 │  Step 1   resolve_location()                                       │
-│           → HK GeoData API → (lon, lat) WGS84                     │
-│           → get_lot_boundary() → iC1000 GML → Polygon EPSG:3857   │
+│           → HK GeoData API → (lon, lat) WGS84                      │
+│           → get_lot_boundary() → iC1000 GML → Polygon EPSG:3857    │
 │           fallback 1: largest OSM building polygon within 100m     │
 │           fallback 2: 40m circular buffer around centroid          │
 │                                                                    │
 │  Step 2   _densify_boundary(polygon, interval_m=1.0)               │
-│           → Shapely exterior.interpolate(d) every 1m              │
+│           → Shapely exterior.interpolate(d) every 1m               │
 │           → (xs, ys) parallel float lists in EPSG:3857             │
 │                                                                    │
 │  Step 3   _fetch_view_features(lon, lat, radius_m=300)             │
-│           → OSMnx features_from_point — 3 concurrent fetches:     │
+│           → OSMnx features_from_point — 3 concurrent fetches:      │
 │              buildings (tags: building=True)                       │
 │              parks     (leisure/landuse/natural)                   │
 │              water     (natural/landuse/waterway)                  │
@@ -159,33 +159,33 @@ Client Request
 │             LNRSAssigner   → apply −3 dB correction                │
 │             CanyonAssigner → add canyon reflection (up to +8 dB)   │
 │             EmissionEngine → L_link (dBA) per segment (EPD formula)│
-│             PropagationEngine.run() → 5m grid + Gaussian σ=1.5    │
+│             PropagationEngine.run() → 5m grid + Gaussian σ=1.5     │
 │             → returns (X[grid], Y[grid], noise[i,j])               │
 │           On failure → _fallback_noise_from_roads()                │
-│             → OSM roads + L(r) = L_class − 20·log₁₀(r+1)         │
+│             → OSM roads + L(r) = L_class − 20·log₁₀(r+1)           │
 │                                                                    │
-│  Step 6   _sample_noise_at_points(xs, ys, X, Y, noise)            │
+│  Step 6   _sample_noise_at_points(xs, ys, X, Y, noise)             │
 │           → nearest-neighbour index lookup into noise grid         │
 │                                                                    │
-│  Step 7   is_noisy = [v >= db_threshold for v in noise_db]        │
+│  Step 7   is_noisy = [v >= db_threshold for v in noise_db]         │
 │                                                                    │
-│  Step 8   site_id = re.sub(r"\s+", "_", value.upper())            │
+│  Step 8   site_id = re.sub(r"\s+", "_", value.upper())             │
 │                                                                    │
 │  Step 9   Assemble core output dict                                │
 │                                                                    │
 │  Step 10  (Optional — if non_building_json AND lease_plan_b64)     │
 │           lease_plan_parser.extract_non_building_areas()           │
-│           → decode base64 → BGR → HSV                             │
+│           → decode base64 → BGR → HSV                              │
 │           → per colour: inRange mask → morphology → findContours   │
-│           → approxPolyDP → _pixel_to_geo() → EPSG:3857            │
+│           → approxPolyDP → _pixel_to_geo() → EPSG:3857             │
 │                                                                    │
 │  Step 11  (Optional — if detect_entry_points AND lease_plan_b64)   │
 │           entry_point_detector.extract_entry_points()              │
 │           → HSV-segment green verge strip                          │
 │           → extract site outer contour                             │
 │           → walk contour, find gaps (no green = access opening)    │
-│           → subdivide each gap → X/Y/Z labels                     │
-│           → _pixel_to_geo() → EPSG:3857                           │
+│           → subdivide each gap → X/Y/Z labels                      │
+│           → _pixel_to_geo() → EPSG:3857                            │
 │                                                                    │
 │  → return JSON-serialisable dict                                   │
 └──────────────────────────────────┬─────────────────────────────────┘

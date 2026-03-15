@@ -11,6 +11,7 @@ import os
 import time
 import logging
 import hashlib
+import json
 
 from modules.spatial_intelligence import generate_site_intelligence
 from modules.dxf_export            import export_dxf
@@ -25,6 +26,44 @@ log = logging.getLogger(__name__)
 # ── App ───────────────────────────────────────────────────────
 app = Flask(__name__)
 CORS(app, origins="*", supports_credentials=False)
+
+
+# ── JSON serialiser — preserves float formatting (65 → 65.0) ─
+class _FloatEncoder(json.JSONEncoder):
+    """
+    Standard json.JSONEncoder drops the decimal on whole-number floats
+    (65.0 → 65, 1.0 → 1).  This subclass forces at least one decimal
+    place so the output always matches the spec (65.0, 1.0).
+    """
+    def iterencode(self, o, _one_shot=False):
+        # Replace every Python float that is a whole number with a
+        # string representation that includes ".0", then let the
+        # standard encoder handle everything else.
+        return super().iterencode(self._fix(o), _one_shot)
+
+    def _fix(self, obj):
+        if isinstance(obj, float):
+            # Format as "65.0", "1.0", "62.3" etc.
+            return _FloatMarker(obj)
+        if isinstance(obj, dict):
+            return {k: self._fix(v) for k, v in obj.items()}
+        if isinstance(obj, (list, tuple)):
+            return [self._fix(v) for v in obj]
+        return obj
+
+
+class _FloatMarker(float):
+    """Thin float subclass so we can override __repr__ for the encoder."""
+    def __repr__(self):
+        # Always emit at least one decimal place
+        s = format(float(self), 'g')
+        return s if '.' in s or 'e' in s else s + '.0'
+
+
+def _json_response(data, status=200):
+    """Drop-in replacement for jsonify() that preserves float decimals."""
+    body = json.dumps(data, cls=_FloatEncoder, ensure_ascii=False)
+    return Response(body, status=status, mimetype="application/json")
 
 # ── Cache ─────────────────────────────────────────────────────
 CACHE_STORE: dict = {}
@@ -117,7 +156,7 @@ def _err(status: int, message: str):
 
 @app.get("/")
 def health():
-    return jsonify({
+    return _json_response({
         "service": "ALKF Master Land Plan API",
         "version": "1.2",
         "status":  "operational",
@@ -159,7 +198,7 @@ def site_intelligence():
         cache_key = make_cache_key(dt, v, threshold)
         if cache_key in CACHE_STORE:
             log.info(f"  Cache hit: {cache_key}")
-            return jsonify(CACHE_STORE[cache_key])
+            return _json_response(CACHE_STORE[cache_key])
 
     try:
         result = generate_site_intelligence(
@@ -183,7 +222,7 @@ def site_intelligence():
         CACHE_STORE[cache_key] = result
 
     log.info(f"  Completed in {time.time() - start:.2f}s")
-    return jsonify(result)
+    return _json_response(result)
 
 
 # ── POST /site-intelligence-dxf ───────────────────────────────
